@@ -17,7 +17,7 @@ class GitTreeVisualizer:
     def __init__(self, git_ref: str):
         """Initialize the visualizer with a Git reference."""
         self.git_ref = git_ref
-        self.nodes: Dict[str, Tuple[str, str]] = {}  # node_id -> (type, name)
+        self.nodes: Dict[str, Tuple[str, str, str]] = {}  # node_id -> (type, name, hash)
         self.edges: List[Tuple[str, str]] = []  # list of (from, to) tuples
         self.visited: Set[str] = set()  # track visited tree objects to avoid loops
         
@@ -102,14 +102,14 @@ class GitTreeVisualizer:
             
             # Add node
             if obj_type == 'tree':
-                self.nodes[node_id] = ('tree', name)
+                self.nodes[node_id] = ('tree', name, obj_hash)
                 # Add edge from parent if it exists
                 if parent_id:
                     self.edges.append((parent_id, node_id))
                 # Recursively crawl subtrees
                 self.crawl_tree(obj_hash, node_id)
             elif obj_type == 'blob':
-                self.nodes[node_id] = ('blob', name)
+                self.nodes[node_id] = ('blob', name, obj_hash)
                 # Add edge from parent if it exists
                 if parent_id:
                     self.edges.append((parent_id, node_id))
@@ -128,13 +128,13 @@ class GitTreeVisualizer:
         ]
         
         # Define node styles
-        tree_nodes = [nid for nid, (ntype, _) in self.nodes.items() if ntype == 'tree']
-        blob_nodes = [nid for nid, (ntype, _) in self.nodes.items() if ntype == 'blob']
+        tree_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'tree']
+        blob_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'blob']
         
         if tree_nodes:
             dot_lines.append('  // Tree objects (directories)')
             for node_id in tree_nodes:
-                _, name = self.nodes[node_id]
+                _, name, _ = self.nodes[node_id]
                 dot_lines.append(
                     f'  {node_id} [label="{name}", fillcolor="#90EE90", shape="folder"];'
                 )
@@ -142,9 +142,10 @@ class GitTreeVisualizer:
         if blob_nodes:
             dot_lines.append('  // Blob objects (files)')
             for node_id in blob_nodes:
-                _, name = self.nodes[node_id]
+                _, name, obj_hash = self.nodes[node_id]
+                hash_prefix = obj_hash[:4]
                 dot_lines.append(
-                    f'  {node_id} [label="{name}", fillcolor="#87CEEB", shape="note"];'
+                    f'  {node_id} [label="{name}\n({hash_prefix})", fillcolor="#87CEEB", shape="note"];'
                 )
         
         # Add edges
@@ -176,7 +177,7 @@ class GitTreeVisualizer:
         
         # Create root node for the tree
         root_id = self.create_node_id(tree_hash, "root")
-        self.nodes[root_id] = ('tree', 'root')
+        self.nodes[root_id] = ('tree', 'root', tree_hash)
         
         # Crawl the tree structure
         self.crawl_tree(tree_hash, root_id)
