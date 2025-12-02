@@ -62,7 +62,8 @@ class GitObjectGraphVisualizer:
                 check=True
             )
             for branch_name in result.stdout.strip().split('\n'):
-                if not branch_name:
+                if not branch_name or branch_name.startswith('('):
+                    # Skip empty lines and the "(HEAD detached at ...)" line
                     continue
                 # Get full commit hash for this branch
                 hash_result = subprocess.run(
@@ -98,6 +99,40 @@ class GitObjectGraphVisualizer:
                 commit_hash = hash_result.stdout.strip()
                 if commit_hash:
                     self.branches.append((branch_name, 'remote', commit_hash))
+        except subprocess.CalledProcessError:
+            pass
+    
+    def get_head_reference(self) -> None:
+        """
+        Get the HEAD reference.
+        HEAD points to a branch (or commit if detached).
+        Returns either a branch name or a commit hash.
+        """
+        try:
+            # Try to get the symbolic reference (branch that HEAD points to)
+            result = subprocess.run(
+                ['git', 'symbolic-ref', '--short', 'HEAD'],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                # HEAD points to a branch
+                branch_name = result.stdout.strip()
+                if branch_name:
+                    # Store HEAD as pointing to this branch
+                    self.branches.append(('HEAD', 'head', f'branch:{branch_name}'))
+            else:
+                # HEAD is detached, get the commit hash
+                hash_result = subprocess.run(
+                    ['git', 'rev-parse', 'HEAD^{commit}'],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                commit_hash = hash_result.stdout.strip()
+                if commit_hash:
+                    # Store HEAD as pointing directly to a commit
+                    self.branches.append(('HEAD', 'head', f'commit:{commit_hash}'))
         except subprocess.CalledProcessError:
             pass
     
@@ -218,17 +253,36 @@ class GitObjectGraphVisualizer:
     
     def process_branches(self) -> None:
         """
-        Create nodes for branches and edges to their commit objects.
+        Create nodes for all branches and edges to their commit objects.
+        HEAD is handled specially as it can point to a branch or commit.
         """
-        for branch_name, branch_type, commit_hash in self.branches:
-            node_id = self.create_branch_node(branch_name, branch_type)
-            
-            # Create branch node
-            self.nodes[node_id] = ('branch', branch_name, branch_type)
-            
-            # Create edge from branch to its commit
-            commit_node_id = self.create_node_id(commit_hash)
-            self.edges.append((node_id, commit_node_id, branch_type))
+        # First, create all branch nodes (local and remote)
+        for branch_name, branch_type, commit_hash_or_ref in self.branches:
+            if branch_type in ('local', 'remote'):
+                # Regular branches - create node and edge to commit
+                node_id = self.create_branch_node(branch_name, branch_type)
+                self.nodes[node_id] = ('branch', branch_name, branch_type)
+                
+                commit_node_id = self.create_node_id(commit_hash_or_ref)
+                self.edges.append((node_id, commit_node_id, branch_type))
+        
+        # Then handle HEAD separately
+        for branch_name, branch_type, commit_hash_or_ref in self.branches:
+            if branch_type == 'head':
+                node_id = self.create_branch_node(branch_name, branch_type)
+                self.nodes[node_id] = ('branch', branch_name, branch_type)
+                
+                # Handle HEAD specially - it may point to a branch or a commit
+                if commit_hash_or_ref.startswith('branch:'):
+                    # HEAD points to a branch
+                    target_branch = commit_hash_or_ref.split(':', 1)[1]
+                    target_node_id = self.create_branch_node(target_branch, 'local')
+                    self.edges.append((node_id, target_node_id, 'head'))
+                elif commit_hash_or_ref.startswith('commit:'):
+                    # HEAD is detached, pointing to a commit
+                    commit_hash = commit_hash_or_ref.split(':', 1)[1]
+                    commit_node_id = self.create_node_id(commit_hash)
+                    self.edges.append((node_id, commit_node_id, 'head'))
     
     def scan_all_references(self, all_objects: List[str]) -> None:
         """
@@ -309,9 +363,13 @@ class GitObjectGraphVisualizer:
                     dot_lines.append(
                         f'  {node_id} [label="{label}", fillcolor="#FFB6C1", shape="ellipse"];'
                     )
-                else:  # remote
+                elif branch_type == 'remote':
                     dot_lines.append(
                         f'  {node_id} [label="{label}", fillcolor="#DDA0DD", shape="ellipse"];'
+                    )
+                elif branch_type == 'head':
+                    dot_lines.append(
+                        f'  {node_id} [label="{label}", fillcolor="#FF6347", shape="ellipse", penwidth="3"];'
                     )
                 
         if commit_nodes:
@@ -371,6 +429,10 @@ class GitObjectGraphVisualizer:
                     dot_lines.append(
                         f'  {from_id} -> {to_id} [label="remote", color="brown"];'
                     )
+                elif rel_type == 'head':
+                    dot_lines.append(
+                        f'  {from_id} -> {to_id} [label="head", color="red", penwidth="2"];'
+                    )
                 else:
                     dot_lines.append(f'  {from_id} -> {to_id} [label="{rel_type}"];')
         
@@ -392,9 +454,10 @@ class GitObjectGraphVisualizer:
         
         print(f"Found {len(all_objects)} git objects", file=sys.stderr)
         
-        # Get all branches
-        print("Scanning git branches...", file=sys.stderr)
+        # Get all branches and HEAD
+        print("Scanning git branches and HEAD...", file=sys.stderr)
         self.get_all_branches()
+        self.get_head_reference()
         
         # First pass: scan all tree objects to discover names
         self.scan_all_references(all_objects)
