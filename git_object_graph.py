@@ -432,6 +432,8 @@ class GitObjectGraphVisualizer:
         
         # Define node styles by type
         branch_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'branch']
+        head_nodes = [nid for nid, (ntype, _, btype) in self.nodes.items() if ntype == 'branch' and btype == 'head']
+        ref_nodes = [nid for nid in branch_nodes if nid not in head_nodes]  # branches excluding HEAD
         commit_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'commit']
         tree_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'tree']
         blob_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'blob']
@@ -463,7 +465,23 @@ class GitObjectGraphVisualizer:
                     dot_lines.append(
                         f'  {node_id} [label="{label}", fillcolor="#FFF0F5", shape="cds", style="dashed,filled"];'
                     )
+            
+            # Rank HEAD at the top level
+            if head_nodes:
+                dot_lines.append(f'  {{rank=same; {" ".join(head_nodes)}}}')
+            
+            # Rank other branches and tags at the same level (below HEAD)
+            if ref_nodes or tag_nodes:
+                dot_lines.append(f'  {{rank=same; {" ".join(ref_nodes + tag_nodes)}}}')
                 
+        if tag_nodes:
+            dot_lines.append('  // Tag objects')
+            for node_id in tag_nodes:
+                _, label, _ = self.nodes[node_id]
+                dot_lines.append(
+                    f'  {node_id} [label="{label}", fillcolor="#FF69B4", shape="diamond"];'
+                )
+        
         if commit_nodes:
             dot_lines.append('  // Commit objects')
             for node_id in commit_nodes:
@@ -471,6 +489,8 @@ class GitObjectGraphVisualizer:
                 dot_lines.append(
                     f'  {node_id} [label="{label}", fillcolor="#FFD700", shape="ellipse"];'
                 )
+            # Rank commits at the same level
+            dot_lines.append(f'  {{rank=same; {" ".join(commit_nodes)}}}')
         
         if tree_nodes:
             dot_lines.append('  // Tree objects')
@@ -487,14 +507,9 @@ class GitObjectGraphVisualizer:
                 dot_lines.append(
                     f'  {node_id} [label="{label}", fillcolor="#87CEEB", shape="note"];'
                 )
+            # Rank blobs at the same level
+            dot_lines.append(f'  {{rank=same; {" ".join(blob_nodes)}}}')
         
-        if tag_nodes:
-            dot_lines.append('  // Tag objects')
-            for node_id in tag_nodes:
-                _, label, _ = self.nodes[node_id]
-                dot_lines.append(
-                    f'  {node_id} [label="{label}", fillcolor="#FF69B4", shape="diamond"];'
-                )
         
         # Add edges with labels
         if self.edges:
