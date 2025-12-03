@@ -23,6 +23,7 @@ class GitObjectGraphVisualizer:
         self.object_names: Dict[str, str] = {}  # hash -> name mapping
         self.branches: List[Tuple[str, str, str]] = []  # list of (branch_name, branch_type, commit_hash)
         self.upstreams: Dict[str, str] = {}  # local_branch -> upstream (remote) branch name
+        self.tag_refs: List[Tuple[str, str]] = []  # list of (tag_name, commit_hash) for tag references
         
     def get_all_git_objects(self) -> List[str]:
         """Get all object hashes known by git."""
@@ -127,6 +128,36 @@ class GitObjectGraphVisualizer:
                 commit_hash = hash_result.stdout.strip()
                 if commit_hash:
                     self.branches.append((branch_name, 'remote', commit_hash))
+        except subprocess.CalledProcessError:
+            pass
+    
+    def get_all_tag_refs(self) -> None:
+        """
+        Get all tag references and their target commits.
+        Stores results in self.tag_refs as (tag_name, commit_hash).
+        """
+        try:
+            result = subprocess.run(
+                ['git', 'tag', '-l'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                check=True
+            )
+            for tag_name in result.stdout.strip().split('\n'):
+                if not tag_name:
+                    continue
+                # Get the commit hash that this tag points to
+                hash_result = subprocess.run(
+                    ['git', 'rev-parse', f'{tag_name}^{{commit}}'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    check=True
+                )
+                commit_hash = hash_result.stdout.strip()
+                if commit_hash:
+                    self.tag_refs.append((tag_name, commit_hash))
         except subprocess.CalledProcessError:
             pass
     
@@ -348,6 +379,17 @@ class GitObjectGraphVisualizer:
                 # Dashed arrow to indicate tracking relationship
                 self.edges.append((local_node_id, target_node_id, 'tracks', ""))
     
+    def process_tag_refs(self) -> None:
+        """
+        Create nodes for all tag references and edges to their commit objects.
+        """
+        for tag_name, commit_hash in self.tag_refs:
+            node_id = self.create_branch_node(tag_name, 'tag_ref')
+            self.nodes[node_id] = ('tag_ref', tag_name, 'tag_ref')
+            
+            commit_node_id = self.create_node_id(commit_hash)
+            self.edges.append((node_id, commit_node_id, 'tag_ref', ""))
+    
     def scan_all_references(self, all_objects: List[str]) -> None:
         """
         First pass: scan all objects to populate object_names from tree and tag references.
@@ -434,6 +476,7 @@ class GitObjectGraphVisualizer:
         branch_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'branch']
         head_nodes = [nid for nid, (ntype, _, btype) in self.nodes.items() if ntype == 'branch' and btype == 'head']
         ref_nodes = [nid for nid in branch_nodes if nid not in head_nodes]  # branches excluding HEAD
+        tag_ref_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'tag_ref']
         commit_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'commit']
         tree_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'tree']
         blob_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'blob']
@@ -470,10 +513,18 @@ class GitObjectGraphVisualizer:
             if head_nodes:
                 dot_lines.append(f'  {{rank=same; {" ".join(head_nodes)}}}')
             
-            # Rank other branches and tags at the same level (below HEAD)
-            if ref_nodes or tag_nodes:
-                dot_lines.append(f'  {{rank=same; {" ".join(ref_nodes + tag_nodes)}}}')
+            # Rank other branches and tag references at the same level (below HEAD)
+            if ref_nodes or tag_ref_nodes:
+                dot_lines.append(f'  {{rank=same; {" ".join(ref_nodes + tag_ref_nodes)}}}')
                 
+        if tag_ref_nodes:
+            dot_lines.append('  // Tag references')
+            for node_id in tag_ref_nodes:
+                _, label, _ = self.nodes[node_id]
+                dot_lines.append(
+                    f'  {node_id} [label="{label}", fillcolor="#FFD966", shape="cds"];'
+                )
+        
         if tag_nodes:
             dot_lines.append('  // Tag objects')
             for node_id in tag_nodes:
@@ -561,6 +612,10 @@ class GitObjectGraphVisualizer:
                     dot_lines.append(
                         f'  {from_id} -> {to_id} [label="tracks", style="dashed", color="black"];'
                     )
+                elif rel_type == 'tag_ref':
+                    dot_lines.append(
+                        f'  {from_id} -> {to_id} [label="tag", color="goldenrod"];'
+                    )
                 else:
                     dot_lines.append(f'  {from_id} -> {to_id};')
         
@@ -587,6 +642,7 @@ class GitObjectGraphVisualizer:
         print("Scanning git branches and HEAD...", file=sys.stderr)
         self.get_all_branches()
         self.get_head_reference()
+        self.get_all_tag_refs()
         
         # First pass: scan all tree objects to discover names
         self.scan_all_references(all_objects)
@@ -601,6 +657,10 @@ class GitObjectGraphVisualizer:
         # Process branches
         print("Adding branches to graph...", file=sys.stderr)
         self.process_branches()
+        
+        # Process tag references
+        print("Adding tag references to graph...", file=sys.stderr)
+        self.process_tag_refs()
         
         print(f"Graph contains {len(self.nodes)} nodes and {len(self.edges)} edges",
               file=sys.stderr)
