@@ -27,7 +27,7 @@ class GitObjectGraphVisualizer:
         """Get all object hashes known by git."""
         try:
             result = subprocess.run(
-                ['git', 'cat-file', '--batch-command', '--batch-all-objects'],
+                ['git', 'cat-file', '--batch-check', '--batch-all-objects'],
                 input='',
                 capture_output=True,
                 text=True,
