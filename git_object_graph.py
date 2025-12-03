@@ -466,10 +466,11 @@ class GitObjectGraphVisualizer:
         dot_lines.append('}')
         return '\n'.join(dot_lines)
     
-    def visualize(self, output_file: str = None) -> str:
+    def visualize(self, output_file: str = None, dot_output_file: str = None) -> str:
         """
         Perform the full visualization process.
         Returns the Graphviz DOT content and optionally writes to file.
+        Runs dot to generate SVG output if dot_output_file is specified.
         """
         # Get all git objects
         print("Scanning git repository for all objects...", file=sys.stderr)
@@ -511,17 +512,50 @@ class GitObjectGraphVisualizer:
             Path(output_file).write_text(dot_content)
             print(f"Graphviz file written to: {output_file}", file=sys.stderr)
         
+        # Run dot to generate SVG if dot_output_file is specified
+        if dot_output_file:
+            print(f"Generating SVG with dot...", file=sys.stderr)
+            try:
+                result = subprocess.run(
+                    ['dot', '-Tsvg', f'-o{dot_output_file}'],
+                    input=dot_content,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    check=True
+                )
+                print(f"SVG file written to: {dot_output_file}", file=sys.stderr)
+            except subprocess.CalledProcessError as e:
+                print(f"Error running dot: {e.stderr}", file=sys.stderr)
+                sys.exit(1)
+            except FileNotFoundError:
+                print("Error: 'dot' command not found. Please install Graphviz.", file=sys.stderr)
+                sys.exit(1)
+        
         return dot_content
 
 
 def main():
-    output_file = sys.argv[1] if len(sys.argv) > 1 else None
+    # Parse command line arguments
+    output_file = None
+    dot_output_file = 'objects.svg'  # Default SVG output file
+    
+    if len(sys.argv) > 1:
+        # First argument is SVG output file (optional) or --no-svg flag
+        if sys.argv[1] == '--no-svg':
+            dot_output_file = None
+        else:
+            dot_output_file = sys.argv[1]
+    
+    if len(sys.argv) > 2:
+        # Second argument is optional DOT file
+        output_file = sys.argv[2]
     
     visualizer = GitObjectGraphVisualizer()
-    dot_content = visualizer.visualize(output_file)
+    dot_content = visualizer.visualize(output_file, dot_output_file)
     
-    # Print to stdout if no output file specified
-    if not output_file:
+    # Only print DOT to stdout if SVG generation is disabled
+    if not dot_output_file:
         print(dot_content)
 
 
