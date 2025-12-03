@@ -509,13 +509,13 @@ class GitObjectGraphVisualizer:
                         f'  {node_id} [label="{label}", fillcolor="#FFF0F5", shape="cds", style="dashed,filled"];'
                     )
             
-            # Rank HEAD at the top level
-            if head_nodes:
-                dot_lines.append(f'  {{rank=same; {" ".join(head_nodes)}}}')
+            # Rank HEAD, tag references, and tag objects at the top level
+            if head_nodes or tag_ref_nodes or tag_nodes:
+                dot_lines.append(f'  {{rank=same; {" ".join(head_nodes + tag_ref_nodes + tag_nodes)}}}')
             
-            # Rank other branches and tag references at the same level (below HEAD)
-            if ref_nodes or tag_ref_nodes:
-                dot_lines.append(f'  {{rank=same; {" ".join(ref_nodes + tag_ref_nodes)}}}')
+            # Rank other branches at the same level (below HEAD and tags)
+            if ref_nodes:
+                dot_lines.append(f'  {{rank=same; {" ".join(ref_nodes)}}}')
                 
         if tag_ref_nodes:
             dot_lines.append('  // Tag references')
