@@ -29,8 +29,9 @@ class GitObjectGraphVisualizer:
             result = subprocess.run(
                 ['git', 'cat-file', '--batch-check', '--batch-all-objects'],
                 input='',
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
                 check=True
             )
         except subprocess.CalledProcessError as e:
@@ -57,8 +58,9 @@ class GitObjectGraphVisualizer:
             # Get local branches
             result = subprocess.run(
                 ['git', 'branch', '--format=%(refname:short)'],
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
                 check=True
             )
             for branch_name in result.stdout.strip().split('\n'):
@@ -68,8 +70,9 @@ class GitObjectGraphVisualizer:
                 # Get full commit hash for this branch
                 hash_result = subprocess.run(
                     ['git', 'rev-parse', f'{branch_name}^{{commit}}'],
-                    capture_output=True,
-                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
                     check=True
                 )
                 commit_hash = hash_result.stdout.strip()
@@ -82,8 +85,9 @@ class GitObjectGraphVisualizer:
             # Get remote branches
             result = subprocess.run(
                 ['git', 'branch', '-r', '--format=%(refname:short)'],
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
                 check=True
             )
             for branch_name in result.stdout.strip().split('\n'):
@@ -92,8 +96,9 @@ class GitObjectGraphVisualizer:
                 # Get full commit hash for this branch
                 hash_result = subprocess.run(
                     ['git', 'rev-parse', f'{branch_name}^{{commit}}'],
-                    capture_output=True,
-                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
                     check=True
                 )
                 commit_hash = hash_result.stdout.strip()
@@ -112,8 +117,9 @@ class GitObjectGraphVisualizer:
             # Try to get the symbolic reference (branch that HEAD points to)
             result = subprocess.run(
                 ['git', 'symbolic-ref', '--short', 'HEAD'],
-                capture_output=True,
-                text=True
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
             )
             if result.returncode == 0:
                 # HEAD points to a branch
@@ -125,8 +131,9 @@ class GitObjectGraphVisualizer:
                 # HEAD is detached, get the commit hash
                 hash_result = subprocess.run(
                     ['git', 'rev-parse', 'HEAD^{commit}'],
-                    capture_output=True,
-                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
                     check=True
                 )
                 commit_hash = hash_result.stdout.strip()
@@ -144,8 +151,9 @@ class GitObjectGraphVisualizer:
         try:
             result = subprocess.run(
                 ['git', 'cat-file', '-t', git_hash],
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
                 check=True
             )
             obj_type = result.stdout.strip()
@@ -162,8 +170,9 @@ class GitObjectGraphVisualizer:
         try:
             result = subprocess.run(
                 ['git', 'cat-file', '-p', git_hash],
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
                 check=True
             )
         except subprocess.CalledProcessError:
@@ -189,8 +198,9 @@ class GitObjectGraphVisualizer:
         try:
             result = subprocess.run(
                 ['git', 'cat-file', '-p', git_hash],
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
                 check=True
             )
         except subprocess.CalledProcessError:
@@ -222,8 +232,9 @@ class GitObjectGraphVisualizer:
         try:
             result = subprocess.run(
                 ['git', 'cat-file', '-p', git_hash],
-                capture_output=True,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
                 check=True
             )
         except subprocess.CalledProcessError:
