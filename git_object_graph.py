@@ -23,6 +23,7 @@ class GitObjectGraphVisualizer:
         self.object_names: Dict[str, str] = {}  # hash -> name mapping
         self.branches: List[Tuple[str, str, str]] = []  # list of (branch_name, branch_type, commit_hash)
         self.upstreams: Dict[str, str] = {}  # local_branch -> upstream (remote) branch name
+        self.index_entries: List[Tuple[str, str]] = []  # list of (short_hash, path) from git index
         self.tag_refs: List[Tuple[str, str]] = []  # list of (tag_name, commit_hash) for tag references
         
     def get_all_git_objects(self) -> List[str]:
@@ -160,6 +161,40 @@ class GitObjectGraphVisualizer:
                     self.tag_refs.append((tag_name, commit_hash))
         except subprocess.CalledProcessError:
             pass
+
+    def get_index_entries(self) -> None:
+        """
+        Read the Git index (staged files) and collect short hash + path pairs.
+        Uses `git ls-files -s` and stores tuples (short_hash, path) in `self.index_entries`.
+        """
+        try:
+            result = subprocess.run(
+                ['git', 'ls-files', '-s'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                check=True
+            )
+        except subprocess.CalledProcessError:
+            return
+
+        entries = []
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            # Format: mode hash stage\tpath
+            parts = line.split()
+            if len(parts) >= 4:
+                short_hash = parts[1][:8]
+                # path is after a tab in the original output; join remainder after the stage
+                # we can extract by splitting on '\t'
+                if '\t' in line:
+                    path = line.split('\t', 1)[1]
+                else:
+                    path = parts[3]
+                entries.append((short_hash, path))
+
+        self.index_entries = entries
     
     def get_head_reference(self) -> None:
         """
@@ -481,6 +516,26 @@ class GitObjectGraphVisualizer:
         tree_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'tree']
         blob_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'blob']
         tag_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'tag']
+
+        # If we have index entries, render an HTML table node
+        if self.index_entries:
+            def _esc(s: str) -> str:
+                return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+            rows = []
+            for short, path in self.index_entries:
+                rows.append(f'<TR><TD>{_esc(short)}</TD><TD ALIGN="LEFT">{_esc(path)}</TD></TR>')
+
+            # Use BGCOLOR on the HTML TABLE so the table background fills the
+            # whole area. Use `shape=plaintext` so Graphviz doesn't draw a
+            # rounded/filled node box around the table.
+            table_html = ('<TABLE BGCOLOR="#FFFFFF" BORDER="0" CELLBORDER="1" CELLSPACING="0">'
+                          '<TR><TD><B>Index (staged)</B></TD><TD></TD></TR>' +
+                          ''.join(rows) +
+                          '</TABLE>')
+
+            dot_lines.append('  // Git index (staged files)')
+            dot_lines.append(f'  index_table [shape=plaintext, margin=0, label=<{table_html}>];')
         
         if branch_nodes:
             dot_lines.append('  // Branch nodes')
@@ -509,9 +564,13 @@ class GitObjectGraphVisualizer:
                         f'  {node_id} [label="{label}", fillcolor="#FFF0F5", shape="cds", style="dashed,filled"];'
                     )
             
-            # Rank HEAD, tag references, and tag objects at the top level
-            if head_nodes or tag_ref_nodes or tag_nodes:
-                dot_lines.append(f'  {{rank=same; {" ".join(head_nodes + tag_ref_nodes + tag_nodes)}}}')
+            # Rank HEAD, tag references, tag objects and index at the top level
+            head_group = head_nodes + tag_ref_nodes + tag_nodes
+            if self.index_entries:
+                # include index_table node id
+                head_group = ['index_table'] + head_group
+            if head_group:
+                dot_lines.append(f'  {{rank=same; {" ".join(head_group)}}}')
             
             # Rank other branches at the same level (below HEAD and tags)
             if ref_nodes:
@@ -643,6 +702,8 @@ class GitObjectGraphVisualizer:
         self.get_all_branches()
         self.get_head_reference()
         self.get_all_tag_refs()
+        # Collect index entries (staged files) for optional display
+        self.get_index_entries()
         
         # First pass: scan all tree objects to discover names
         self.scan_all_references(all_objects)
